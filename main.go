@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"os/exec"
 
 	"gopkg.in/ini.v1"
@@ -20,6 +22,12 @@ type s3Config struct {
 	keyID      string
 	secreteKey string
 	bucket     string
+}
+
+func check(e error) {
+	if e != nil {
+		panic(e)
+	}
 }
 
 func getConfig(configPath string) (mysqlconf mysqlConfig, s3conf s3Config) {
@@ -47,13 +55,28 @@ func getConfig(configPath string) (mysqlconf mysqlConfig, s3conf s3Config) {
 	return mysqlconf, s3conf
 }
 
-func backupMySQL(mysqlconf mysqlConfig) {
-	backupCmd := "mysqldump -h " + mysqlconf.host + " -P " + mysqlconf.port + " -u " + mysqlconf.username + " -p" + mysqlconf.password + " " + mysqlconf.database
-	exec.Command(backupCmd)
+func genDumpFile(databaseName string) (*os.File, error) {
+	dumpPath := fmt.Sprintf("%s.sql", databaseName)
+	return os.Create(dumpPath)
+}
+
+func backupMySQL(mysqlconf mysqlConfig, w io.Writer) error {
+	bckCmd := exec.Command("/usr/local/bin/mysqldump", "-h"+mysqlconf.host, "-P"+mysqlconf.port, "-u"+mysqlconf.username, "-p"+mysqlconf.password, mysqlconf.database)
+
+	//bckCmd.Stdout = w http.ResponseWriter, r *http.Request
+	bckCmd.Stdout = w
+	return bckCmd.Run()
 }
 
 func main() {
-	configPath := "/Users/joaocarreira/go/src/github.com/johnnybus/backup-mysq-s3/backup.conf"
+	configPath := "/Users/joaocarreira/go/src/github.com/johnnybus/backup-mysql-s3/backup.conf"
 	mysqlconf, s3conf := getConfig(configPath)
+	w, err := genDumpFile(mysqlconf.database)
+	check(err)
+	defer w.Close()
+
+	err = backupMySQL(mysqlconf, w)
+	check(err)
+
 	fmt.Printf("%v - %v\n", mysqlconf, s3conf)
 }
